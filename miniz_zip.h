@@ -65,6 +65,11 @@ extern "C"
         /* Guaranteed to be zero terminated, may be truncated to fit. */
         char m_filename[MZ_ZIP_MAX_ARCHIVE_FILENAME_SIZE];
 
+        /* Full filename in the central directory, valid until the reader closes. */
+        const char *m_full_filename;
+        mz_uint32 m_full_filename_size;
+        mz_bool m_filename_utf8;
+
         /* Comment field. */
         /* Guaranteed to be zero terminated, may be truncated to fit. */
         char m_comment[MZ_ZIP_MAX_ARCHIVE_FILE_COMMENT_SIZE];

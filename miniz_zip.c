@@ -1312,6 +1312,9 @@ static int mz_stat64(const char *path, struct __stat64 *buffer)
         n = MZ_MIN(n, MZ_ZIP_MAX_ARCHIVE_FILENAME_SIZE - 1);
         memcpy(pStat->m_filename, p + MZ_ZIP_CENTRAL_DIR_HEADER_SIZE, n);
         pStat->m_filename[n] = '\0';
+        pStat->m_full_filename = (const char *)(p + MZ_ZIP_CENTRAL_DIR_HEADER_SIZE);
+        pStat->m_full_filename_size = MZ_READ_LE16(p + MZ_ZIP_CDH_FILENAME_LEN_OFS);
+        pStat->m_filename_utf8 = (pStat->m_bit_flag & 0x800) != 0;
 
         n = MZ_READ_LE16(p + MZ_ZIP_CDH_COMMENT_LEN_OFS);
         n = MZ_MIN(n, MZ_ZIP_MAX_ARCHIVE_FILE_COMMENT_SIZE - 1);
@@ -1324,9 +1327,7 @@ static int mz_stat64(const char *path, struct __stat64 *buffer)
         pStat->m_is_encrypted = mz_zip_reader_is_file_encrypted(pZip, file_index);
         pStat->m_is_supported = mz_zip_reader_is_file_supported(pZip, file_index);
 
-        /* See if we need to read any zip64 extended information fields. */
-        /* Confusingly, these zip64 fields can be present even on non-zip64 archives (Debian zip on a huge files from stdin piped to stdout creates them). */
-        if (MZ_MAX(MZ_MAX(pStat->m_comp_size, pStat->m_uncomp_size), pStat->m_local_header_ofs) == MZ_UINT32_MAX)
+        /* Read extended information and the Info-ZIP Unicode path field. */
         {
             /* Attempt to find zip64 extended information field in the entry's extra data */
             mz_uint32 extra_size_remaining = MZ_READ_LE16(p + MZ_ZIP_CDH_EXTRA_LEN_OFS);
@@ -1387,7 +1388,21 @@ static int mz_stat64(const char *path, struct __stat64 *buffer)
                             field_data_remaining -= sizeof(mz_uint64);
                         }
 
-                        break;
+                    }
+
+                    if (field_id == 0x7075 && !(pStat->m_bit_flag & 0x800))
+                    {
+                        const mz_uint8 *pField_data = pExtra_data + sizeof(mz_uint16) * 2;
+                        pStat->m_full_filename = (const char *)(p + MZ_ZIP_CENTRAL_DIR_HEADER_SIZE);
+                        pStat->m_full_filename_size = MZ_READ_LE16(p + MZ_ZIP_CDH_FILENAME_LEN_OFS);
+                        pStat->m_filename_utf8 = MZ_FALSE;
+                        if (field_data_size >= 5 && pField_data[0] == 1 &&
+                            MZ_READ_LE32(pField_data + 1) == mz_crc32(0, (const mz_uint8 *)pStat->m_full_filename, pStat->m_full_filename_size))
+                        {
+                            pStat->m_full_filename = (const char *)(pField_data + 5);
+                            pStat->m_full_filename_size = field_data_size - 5;
+                            pStat->m_filename_utf8 = MZ_TRUE;
+                        }
                     }
 
                     pExtra_data += sizeof(mz_uint16) * 2 + field_data_size;
